@@ -1,0 +1,37 @@
+---
+title: "607 Assignment 10B Dylan Gold"
+format: html
+editor: visual
+---
+
+# Approach
+
+In this assignment we have to use the Noble Prize Developer Zone to collect data and answer some data driven questions. First I will test out the API call. It looks like we do not need an account for this call. Once I experiment with some calls I can see how it works and create some questions.
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(httr)
+library(jsonlite)
+```
+
+I will look at laureates api, there is also one
+
+```{r}
+url <- "https://api.nobelprize.org/2.1/laureates" # Testing simple api call on the laureates endpoint
+
+response <- GET(url)
+data <- fromJSON(content(response, "text", encoding = "UTF-8"))
+status_code(response)
+```
+
+Display data, use unnest to show more than the lists/dataframes nested inside.
+
+```{r}
+laureates_df <- unnest(data$laureates)
+
+head(laureates_df)
+```
+
+We can see Names and prize money here, we can see that unnesting it duplicated rows as they have the same ID. There are also dataframes still shown inside probably nested even deeper. I will have to fix this in the codebase but some inistial questions I can ask are could be based on money, something as simple as who made the most money? I could also ask something more complicated related to money like what was the average earning each year shown in a timeplot. Once I see more of the columns that are nested deeper like the place or category I could ask questions based on that as well.
+
+# Codebase

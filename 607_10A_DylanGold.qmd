@@ -1,0 +1,20 @@
+---
+title: "607 Assignment 10A Dylan Gold"
+format: html
+editor: visual
+---
+
+# Approach
+
+In this assignment we must perform sentiment analysis. \
+We can start off by reproducing the example from Text Mining With R. \
+This is the citation for that source: \
+`Silge, J., & Robinson, D. (2017). Text mining with R: A tidy approach. O’Reilly Media. ` \
+
+This text discusses the turning of texts into a tidy format, how that format can be used along with sentiment lexicons, collections describing the sentiment/feeling of different words, to show the texts sentiment at different parts or as a whole. \
+
+I will follow the example in chapter 2 to create sentiment analysis for Jane Austen's completed works (the example uses this). There are different sentiment databases used in the text's example.
+
+We then can extend with the use of a different text, as well as using a different sentiment database/lexicon
+
+# Codebase
