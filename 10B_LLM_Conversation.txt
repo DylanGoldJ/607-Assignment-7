@@ -1,0 +1,121 @@
+Chatgpt 
+Me: I am using https://api.nobelprize.org/2.1/nobelPrizes to create api calls how do I get more than the 25 inital responses
+
+Response: The Nobel Prize API (`https://api.nobelprize.org/2.1/nobelPrizes`) paginates results, so the default response is capped (often 25 items per request).
+
+To get more than the initial 25 results, you need to use **pagination parameters**, mainly:
+
+* `limit` → how many results per request
+* `offset` → where to start in the dataset
+
+### Example
+
+#### First 25 (default or explicit)
+
+```bash
+https://api.nobelprize.org/2.1/nobelPrizes?limit=25&offset=0
+```
+
+#### Next 25
+
+```bash
+https://api.nobelprize.org/2.1/nobelPrizes?limit=25&offset=25
+```
+
+#### Next 25 after that
+
+```bash
+https://api.nobelprize.org/2.1/nobelPrizes?limit=25&offset=50
+```
+
+### How it works
+
+* `offset=0` → items 1–25
+* `offset=25` → items 26–50
+* `offset=50` → items 51–75
+  …and so on.
+
+### Tip
+
+You can increase the page size too (if the API allows it):
+
+```bash
+limit=100&offset=0
+```
+
+Then just loop by increasing `offset += limit`.
+
+---
+
+If you want, tell me what language you're using (Python, JS, etc.), and I can show you a clean pagination loop for it.
+
+Me: I am using unnest_longer to separate a vector into rows. I have another vector, same dataframe, same size, has values corresponding to the first. Separate together
+
+Response:What’s happening is: you’re unnesting only one list-column, so R expands it, but your other list-column stays “as-is” unless you explicitly tell it to expand in sync.
+
+You want both vectors to stay aligned row-by-row after unnesting.
+
+---
+
+## 🔹 Correct approach: unnest both columns together
+
+Use `unnest_longer()` on both columns **in the same pipeline**, or better, unnest multiple columns at once.
+
+### ✅ Best tidyverse way
+
+```r id="n2k8qp"
+library(dplyr)
+library(tidyr)
+
+df_long <- df %>%
+  unnest_longer(c(vector1, vector2))
+```
+
+This guarantees:
+
+* `vector1[i]` stays paired with `vector2[i]`
+* rows expand in lockstep
+
+---
+
+## 🔹 If you used separate unnest calls (wrong way)
+
+❌ This breaks alignment:
+
+```r id="x8p2ld"
+df %>% unnest_longer(vector1) %>% unnest_longer(vector2)
+```
+
+Because the second unnest is applied after the first expansion, causing mismatch.
+
+---
+
+## 🔹 If you already have separate list-columns but need control
+
+You can also explicitly bind them before unnesting:
+
+```r id="k3m9vd"
+df_long <- df %>%
+  mutate(temp = map2(vector1, vector2, ~ tibble(v1 = .x, v2 = .y))) %>%
+  unnest(temp)
+```
+
+This is useful if:
+
+* vectors are nested unevenly
+* you want guaranteed pairing logic
+
+---
+
+## 🔹 Key rule (important)
+
+When working with list-columns in R:
+
+> All columns that represent the same “row-level structure” must be unnested together in a single operation.
+
+---
+
+If you want, I can also show how to:
+
+* preserve original row IDs after unnesting
+* or handle cases where the vectors are different lengths (which needs padding or recycling rules)

@@ -12,6 +12,7 @@ In this assignment we have to use the Noble Prize Developer Zone to collect data
 library(tidyverse)
 library(httr)
 library(jsonlite)
+library(gt)
 ```
 
 I will look at laureates api, there is also one
@@ -35,3 +36,160 @@ head(laureates_df)
 We can see Names and prize money here, we can see that unnesting it duplicated rows as they have the same ID. There are also dataframes still shown inside probably nested even deeper. I will have to fix this in the codebase but some inistial questions I can ask are could be based on money, something as simple as who made the most money? I could also ask something more complicated related to money like what was the average earning each year shown in a timeplot. Once I see more of the columns that are nested deeper like the place or category I could ask questions based on that as well.
 
 # Codebase
+
+I will start off by loading in the data again.
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(httr)
+library(jsonlite)
+```
+This time I will look at the other endpoint, 
+```{r}
+url <- "https://api.nobelprize.org/2.1/nobelPrizes" # Testing simple api call on the laureates endpoint
+
+response <- GET(url)
+data <- fromJSON(content(response, "text", encoding = "UTF-8"))
+status_code(response)
+```
+After looking at the data, I believe the nobelPrizes endpoint would be easier to work with and probably easier to formulate questions on. \
+
+I also noticed we were being cut off and only receiving 25 responses. Initially I was considering running loops for each of the categories and each of the years because in the documentation those are the ways you can modify the request but I decided to ask Chatgpt as well. I was surprised to find that you could actually just modify the request to give you more responses. Chatgpt recommended the following line of code \
+`https://api.nobelprize.org/2.1/nobelPrizes?limit=25&offset=0`
+I modified this line to give me all the responses available.
+
+```{r}
+url <- "https://api.nobelprize.org/2.1/nobelPrizes?limit=1000" # set the limit to 1000 to get all (682) rows
+response <- GET(url)
+data <- fromJSON(content(response, "text", encoding = "UTF-8"))
+status_code(response)
+```
+
+
+```{r}
+df <- data$nobelPrizes
+glimpse(df)
+```
+We now see that we have the data, all 682 rows. we can unnest the data and ask questions. I will follow through on my approach of asking questions relating to the prize amount and such.\
+I will use unnest_wider as we likely want to create more columns from the values as opposed to longer which would create more rows. \
+I will chain several unnest_wider calls on columns that are nested.\
+Because some have overlaping column names, we can use names_sep to attach the new column name to the original.
+```{r}
+
+np_df <- df %>%
+  unnest_wider(category, names_sep = "_") %>% # both categorys have overlap. names_sep needed
+  unnest_wider(categoryFullName, names_sep = "_") %>%
+  unnest_wider(links) %>%
+  unnest_wider(laureates) %>%
+  unnest_wider(topMotivation)
+
+head(np_df)
+```
+We now have all our columns unnested. I will select columns that I think are useful because there are many columns that are not.\
+Many columns are redundant, like date awarded and year, category and categoryFullname.
+
+```{r}
+columns <- c("awardYear", "category_en", "prizeAmount", "prizeAmountAdjusted", "fullName", "portion")
+np_data <- np_df %>%
+  select(all_of(columns))
+head(np_data)
+```
+
+We also have cases where there are multiple laureates for a single award. I want to see if there are cases where each person is not awarded the some portion. I will filter on this column with unique for this. This will also be my first question that I try to answer, How many times was the prize money split unequally? \
+We get 39 noble prizes were split unequally.
+```{r}
+# This function checks the unique amount, if its greater than 1, meaning we have not all equal proportions return True, else false
+check_unique <- function(x) {
+  return(length(unique(x)) > 1)
+}
+
+filtered_unequal <- np_data %>% filter(sapply(np_data$portion, check_unique))
+head(filtered_unequal)
+nrow(filtered_unequal)
+```
+This makes making the data frame tidy a bit more difficult. We have to match each person to their proportion of the prize money rather than just divide by the number of people.
+We can still do this. We have 2 columns, one with names and another with their corresponding portions. \
+The rows need to be make into multiple rows so we use unnest longer. \
+I was not sure if I could unnest_longer while keeping corresponding rows together so I decided to use the LLM again, chatgpt. \
+I learn I can just give unnest_longer a list of columns and it will do exactly that. \
+I combine this with mutate to create new prizeAmounts and prizeAmountAdjusted. \
+The converting from fraction to numeric I also asked chatgpt to help.
+
+```{r}
+tidy_np <- np_data %>%
+  unnest_longer(c(fullName, portion), keep_empty = TRUE) %>% # Sometimes the prize has no laureates.
+  unnest_wider(fullName) %>% # Got put into a vector again, unnest
+    mutate(
+    portion = map_dbl(portion, function(x) { # Generated Code modified slightly, converts fraction to numeric
+      if (is.na(x)) return(1) # Returns 1 if na
+      if (!grepl("/", x)) return(as.numeric(x)) # if whole number returns the number, ex 1 -> 1
+
+      s <- strsplit(x, "/")[[1]] # Splits by / 
+      as.numeric(s[1]) / as.numeric(s[2]) # Divides numerator and denominator
+    }),
+    prizeAmount = prizeAmount * portion, # Multiply by the portion we updated from fraction char to numeric.
+    prizeAmountAdjusted = prizeAmountAdjusted * portion
+    )
+  
+head(tidy_np)
+```
+
+We now have a tidy version of the data that we can ask more questions about. We already answered how many awards had multiple laureates. \
+My other questions will be what category has made the most adjusted prize money? \
+Who has made the most adjusted prize money? \
+And how has the total reward money changed each year for each category?
+
+For the category that has made the most adjusted prize money we can see Chemisty, Peace, Physics, Physiology or Medicine,  all made the same amount while literature is shortly after, and economic sciences being close to half the other cateogories. We will look at a graph in the last question that may answer this.
+```{r}
+money_by_category <- tidy_np %>%
+  group_by(category_en) %>%
+  summarize(Total_Prize_Adjusted = sum(prizeAmountAdjusted)) %>%
+  arrange(desc(Total_Prize_Adjusted)) %>%
+  ungroup()
+  
+money_by_category
+```
+
+For the who has made the most money. We can see that much of the money did not have someone to claim it. Turns out also that not many people have won more than 1 nobel prize. I checked some people who have like Marie Curie and their adjusted total was summed up properly.
+```{r}
+money_by_person <- tidy_np %>%
+  group_by(en) %>%
+  summarize(Total_Prize_Adjusted = sum(prizeAmountAdjusted)) %>%
+  arrange(desc(Total_Prize_Adjusted)) %>%
+  ungroup()
+
+money_by_person %>%
+  gt() %>%
+      cols_label(
+        'en' = "Laureates",
+        'Total_Prize_Adjusted' = "Total Prize Money Adjusted"
+      ) %>%
+      tab_header(title = md("Individual Noble Prize Money Total")) %>%
+      tab_options(container.height = 500, container.overflow.y = TRUE) # Set container height and container overflow to add scrolling for large tables.
+```
+
+
+Finally I want to see the change in adjusted prize money each year for each category. We can see that all the values are actually ontop of eachother so the prize money is actually kept the same for most awards, we can see in a particular year the prize money of the literature reward was a little lower. This would also explain how our first question led many categories having the same amount, Economic Sciences also started later on as a category.
+```{r, message=FALSE, warning=FALSE}
+yearly_money <- tidy_np %>%
+  group_by(awardYear, category_en) %>%
+  summarize(Total_Prize_Adjusted = sum(prizeAmountAdjusted)) %>%
+  ungroup() %>%
+  mutate(awardYear = as.Date(paste0(awardYear, "-01-01")))
+
+yearly_money %>%
+ggplot(aes(x = awardYear, y = Total_Prize_Adjusted, group = category_en, color = category_en)) +
+  geom_point(alpha = .3) + # Points overlap, make transparaent
+  theme_minimal() +
+  labs(
+    title = "Nobel Prize Money Over Time by Category",
+    x = "Year",
+    y = "Adjusted Prize Money",
+    color = "Category"
+  )
+```
+
+# Conclusion
+In conclusion we were able to use the noble prize api to create and answer questions about our topic. We asked some questions that required filtering/grouping by. We also took advantage of tidyverses' unnest_wider to unwrap nested layers in the json that was returned to us in an api response. By combining different functions like unnest_wider and unnest_longer I was able to create a tidy version of the api response. Through this dataframe I answered questions like how many prizes awarded had muliple people with unequal portions of the prize money, or how has the adjusted prize money changed from year to year. Some ways I could expand on this project are to look at the other api endpoint for more detailed data on the laureates or ask more questions about the api endpoint I used already.
+
+
