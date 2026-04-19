@@ -51,12 +51,14 @@ tidy_books <- austen_books() %>%
 ```{r}
 get_sentiments("nrc")
 ```
-Next the textbook shows the use of the nrc sentiment lexicon to perform sentiment analysis on the books. Because we have it in a tidy format from before we can just use inner join.\
-First we will just look at sentiments with joy. Inner join will basically let combine each word with its sentiment and then we will count the words. \
-This will give us a count of all the words with the joy sentiment in the Emma book. \
 
-For the nrc lexicon citation: \
-This dataset was published in Saif M. Mohammad and Peter Turney. (2013), ``Crowdsourcing a Word-Emotion Association Lexicon.'' Computational Intelligence, 29(3): 436-465.
+Next the textbook shows the use of the nrc sentiment lexicon to perform sentiment analysis on the books. Because we have it in a tidy format from before we can just use inner join.\
+First we will just look at sentiments with joy. Inner join will basically let combine each word with its sentiment and then we will count the words.\
+This will give us a count of all the words with the joy sentiment in the Emma book.\
+
+For the nrc lexicon citation:\
+This dataset was published in Saif M. Mohammad and Peter Turney. (2013), \`\`Crowdsourcing a Word-Emotion Association Lexicon.'' Computational Intelligence, 29(3): 436-465.
+
 ```{r message=FALSE}
 nrc_joy <- get_sentiments("nrc") %>% 
   filter(sentiment == "joy")
@@ -67,18 +69,20 @@ tidy_books %>%
   count(word, sort = TRUE)
 ```
 
-Here we are now using the bing lexicon. This lexigon just had positive and negative to describe words. Here we count the number of positive and negative words within the first 80 lines.
-We then get the sentiment as the positives - negatives.
+Here we are now using the bing lexicon. This lexigon just had positive and negative to describe words. Here we count the number of positive and negative words within the first 80 lines. We then get the sentiment as the positives - negatives.
+
 ```{r, message=FALSE, warning=FALSE}
 library(tidyr)
 
 jane_austen_sentiment <- tidy_books %>%
   inner_join(get_sentiments("bing")) %>%
-  count(book, index = linenumber %/% 80, sentiment) %>%
+    count(book, index = linenumber %/% 80, sentiment) %>%
   pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
   mutate(sentiment = positive - negative)
 ```
+
 We then graph this for each of the books
+
 ```{r}
 library(ggplot2)
 
@@ -87,16 +91,86 @@ ggplot(jane_austen_sentiment, aes(index, sentiment, fill = book)) +
   facet_wrap(~book, ncol = 2, scales = "free_x")
 ```
 
-
 ## Extending the example
 
-Now we can extend off this by using a different text as well as a different lexicon. There is a 4th lexicon in the tidytext package that the textbook did not mention called loughran. \
+Now we can extend off this by using a different text as well as a different lexicon. There is a 4th lexicon in the tidytext package that the textbook did not mention called loughran.\
 The loughran sentiment lexicon is designed for economic related texts. I will choose an article that has a economic context for this. I will compare the loughran lexicon to one of the other lexicons in the tidytext package.\
 
-First I will get an article. I picked
-New York Fed President Williams worries war will slow growth, aggravate inflation By Jeff Cox \
-Published Thu, Apr 16 20268:35 AM EDTUpdated Thu, Apr 16 20269:58 AM EDT \
-https://www.cnbc.com/2026/04/16/new-york-fed-president-williams-worries-war-will-slow-growth-aggravate-inflation.html \
+First I will get an article. I picked \
+`New York Fed President Williams worries war will slow growth, aggravate inflation By Jeff Cox`\
+`Published Thu, Apr 16 20268:35 AM EDTUpdated Thu, Apr 16 20269:58 AM EDT`\
+`https://www.cnbc.com/2026/04/16/new-york-fed-president-williams-worries-war-will-slow-growth-aggravate-inflation.html`\
 
+I saved the txt file to be retrieved here
 
+```{r,  message=FALSE, warning=FALSE}
+url <- "https://raw.githubusercontent.com/DylanGoldJ/607-Assignment-7/refs/heads/main/10A_Sample.txt"
+text <- readLines(url)
+text <- text[text != ""] # Get rid of the lines that are empty
+```
 
+We now need the data in a tidy format.
+
+```{r, message=FALSE, warning=FALSE}
+#Create dataframe 
+article_df <- read.table(text = text, header = FALSE, sep = "\n") # Separate by new lines
+colnames(article_df)[1] <- "text" # Label the text column
+article_df <- article_df %>% mutate(paragraph = row_number())  %>% # Create paragraph column
+  unnest_tokens(word, text) # Unnest the paragraphs for each word.
+head(article_df)
+```
+
+We now have our article in a tidy format. We have the paragraph as well as the word.\
+We now need to use the loughran lexicon to show the sentiments.\
+I will count just by sentiment because our sample is very small.
+
+```{r, message=FALSE, warning=FALSE}
+article_sentiment <- article_df %>%
+  inner_join(get_sentiments("loughran")) %>%
+  count(sentiment)
+
+article_sentiment
+```
+
+We can see that this article was overall pretty negative and uncertain. This makes sense given the article is about how war will hurt our economy.\
+Note that while theres some overlap the type of sentiment is a bit different from previous examples like the nrc lexicon.
+
+I am interested in comparing how a different model compares to this. I will create graphs for both these lexicons on this article.\
+I will use bing because it is either positive or negative which is similar to the sentiment seen in the loughran lexicon. Note that some of the sentiments were not shown because there was none for that sentiment, for example superfluous was not found. The loughran will also lose words in our comparison
+
+```{r, message=FALSE, warning=FALSE}
+# Loughran sentiment
+article_sentiment_loug <- article_df %>%
+  inner_join(get_sentiments("loughran")) %>%
+  count(sentiment, paragraph)
+# Bing sentiment
+article_sentiment_bing <-  article_df %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(sentiment, paragraph)
+
+# Combine to graph
+article_sentiments <- bind_rows(
+  loughran = article_sentiment_loug,
+  bing = article_sentiment_bing,
+  .id = "lexicon") # Combine, id to separate them based on the original
+
+# Create new column based on positve - negative sentiment
+article_sentiments <- article_sentiments %>%
+  filter((sentiment == "positive") | (sentiment == "negative")) %>% # Mutate, only positive or negative values.
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%  # Pivot wider to expand an fill in sentiments that had no positives or negatives
+  mutate(sentiment = positive - negative)
+  
+ggplot(article_sentiments, aes(paragraph, sentiment, fill = lexicon)) +
+  geom_col(show.legend = FALSE) +
+    facet_wrap(~lexicon, ncol = 2) +
+      labs(
+      title = "Sentiment of different lexicons",
+      x = "Paragraph #",
+      y = "Sentiment Level",)
+```
+
+We have used both lexicons on the same text, we can see that they share a overall negative sentiment but bing has a more positive interpretation at the start while loughran is negative for the first few paragraphs. Towards the end bing equates the words to have a negative sentiment but loughran has a positive sentiment at the end.
+
+# Conclusion
+
+In conclusion this assignment showed us how to perform basic unigram sentiment analysis. We replicated the textbook sample to understand how we could take advantage of a tidy dataframe to use innerjoin to easily match words to their sentiments. After following the example given I looked at another lexicon not mentioned in the textbook. Given the context of this new lexicon I used an article discussing econonomic topics. I saw how different lexicons have different uses and sentiments, and compared two lexicons on the same article. To further improve on this I could try larger texts, different lexicons. I could try something new like comparing the sentiment of a review for a product to the numeric rating given.
