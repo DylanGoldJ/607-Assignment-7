@@ -6,15 +6,97 @@ editor: visual
 
 # Approach
 
-In this assignment we must perform sentiment analysis. \
-We can start off by reproducing the example from Text Mining With R. \
-This is the citation for that source: \
-`Silge, J., & Robinson, D. (2017). Text mining with R: A tidy approach. O’Reilly Media. ` \
+In this assignment we must perform sentiment analysis.\
+We can start off by reproducing the example from Text Mining With R.\
+This is the citation for that source:\
+`Silge, J., & Robinson, D. (2017). Text mining with R: A tidy approach. O’Reilly Media.`\
 
-This text discusses the turning of texts into a tidy format, how that format can be used along with sentiment lexicons, collections describing the sentiment/feeling of different words, to show the texts sentiment at different parts or as a whole. \
+This text discusses the turning of texts into a tidy format, how that format can be used along with sentiment lexicons, collections describing the sentiment/feeling of different words, to show the texts sentiment at different parts or as a whole.\
 
 I will follow the example in chapter 2 to create sentiment analysis for Jane Austen's completed works (the example uses this). There are different sentiment databases used in the text's example.
 
 We then can extend with the use of a different text, as well as using a different sentiment database/lexicon
 
 # Codebase
+
+## Textbook Example
+
+First I will recreate the example from the textbook. We need the additional libraries to be installed aswell\
+
+I will start with sentiment analysis of the same texts using inner join.\
+First we need to tokenize the text we have.\
+There are several books in the austen_books data that we first group by.\
+We then create two columns linenumber from the row number and chapter using a regular expression to separate the chapters.\
+We then convert the text column into the word column while also splitting the text by word into separate rows.\
+
+```{r, message=FALSE, warning=FALSE}
+library(tidytext)
+library(janeaustenr)
+library(dplyr)
+library(stringr)
+```
+
+```{r}
+tidy_books <- austen_books() %>%
+  group_by(book) %>%
+  mutate(
+    linenumber = row_number(),
+    chapter = cumsum(str_detect(text, 
+                                regex("^chapter [\\divxlc]", 
+                                      ignore_case = TRUE)))) %>%
+  ungroup() %>%
+  unnest_tokens(word, text)
+```
+
+```{r}
+get_sentiments("nrc")
+```
+Next the textbook shows the use of the nrc sentiment lexicon to perform sentiment analysis on the books. Because we have it in a tidy format from before we can just use inner join.\
+First we will just look at sentiments with joy. Inner join will basically let combine each word with its sentiment and then we will count the words. \
+This will give us a count of all the words with the joy sentiment in the Emma book. \
+
+For the nrc lexicon citation: \
+This dataset was published in Saif M. Mohammad and Peter Turney. (2013), ``Crowdsourcing a Word-Emotion Association Lexicon.'' Computational Intelligence, 29(3): 436-465.
+```{r message=FALSE}
+nrc_joy <- get_sentiments("nrc") %>% 
+  filter(sentiment == "joy")
+
+tidy_books %>%
+  filter(book == "Emma") %>%
+  inner_join(nrc_joy) %>%
+  count(word, sort = TRUE)
+```
+
+Here we are now using the bing lexicon. This lexigon just had positive and negative to describe words. Here we count the number of positive and negative words within the first 80 lines.
+We then get the sentiment as the positives - negatives.
+```{r, message=FALSE, warning=FALSE}
+library(tidyr)
+
+jane_austen_sentiment <- tidy_books %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(book, index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+```
+We then graph this for each of the books
+```{r}
+library(ggplot2)
+
+ggplot(jane_austen_sentiment, aes(index, sentiment, fill = book)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~book, ncol = 2, scales = "free_x")
+```
+
+
+## Extending the example
+
+Now we can extend off this by using a different text as well as a different lexicon. There is a 4th lexicon in the tidytext package that the textbook did not mention called loughran. \
+The loughran sentiment lexicon is designed for economic related texts. I will choose an article that has a economic context for this. I will compare the loughran lexicon to one of the other lexicons in the tidytext package.\
+
+First I will get an article. I picked
+New York Fed President Williams worries war will slow growth, aggravate inflation By Jeff Cox \
+Published Thu, Apr 16 20268:35 AM EDTUpdated Thu, Apr 16 20269:58 AM EDT \
+https://www.cnbc.com/2026/04/16/new-york-fed-president-williams-worries-war-will-slow-growth-aggravate-inflation.html \
+
+
+
